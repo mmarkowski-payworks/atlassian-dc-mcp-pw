@@ -96,6 +96,26 @@ describe('Jira MCP server — integration', () => {
       });
       expect(result.isError).toBe(true);
     });
+
+    it('rejects jira_createIssue when required projectId is missing', async () => {
+      ({ client, server } = await buildClient(makeService()));
+      const result = await client.callTool({
+        name: 'jira_createIssue',
+        arguments: { summary: 'Title', description: 'Desc', issueTypeId: '1' },
+      });
+      expect(result.isError).toBe(true);
+      expect(IssueService.createIssue).not.toHaveBeenCalled();
+    });
+
+    it('rejects jira_postIssueComment when comment exceeds max length', async () => {
+      ({ client, server } = await buildClient(makeService()));
+      const result = await client.callTool({
+        name: 'jira_postIssueComment',
+        arguments: { issueKey: 'PROJ-1', comment: 'x'.repeat(32001) },
+      });
+      expect(result.isError).toBe(true);
+      expect(IssueService.addComment).not.toHaveBeenCalled();
+    });
   });
 
   describe('exclusion enforcement through MCP boundary', () => {
@@ -142,6 +162,81 @@ describe('Jira MCP server — integration', () => {
       const calledJql = SearchService.searchUsingSearchRequest.mock.calls[0][0].jql as string;
       expect(calledJql).toMatch(/project NOT IN/i);
       expect(calledJql).toMatch(/"EXCL"/);
+    });
+
+    it('blocks jira_createIssue for an excluded project without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['SECRET'])));
+
+      const result = await client.callTool({
+        name: 'jira_createIssue',
+        arguments: { projectId: 'SECRET', summary: 'Title', description: 'Desc', issueTypeId: '1' },
+      });
+
+      expect(result.isError).toBeFalsy();
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/SECRET.*excluded/i);
+      expect(IssueService.createIssue).not.toHaveBeenCalled();
+    });
+
+    it('blocks jira_updateIssue for an excluded project without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['SECRET'])));
+
+      const result = await client.callTool({
+        name: 'jira_updateIssue',
+        arguments: { issueKey: 'SECRET-5', summary: 'New title' },
+      });
+
+      expect(result.isError).toBeFalsy();
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/SECRET.*excluded/i);
+      expect(IssueService.updateIssue).not.toHaveBeenCalled();
+    });
+
+    it('blocks jira_postIssueComment for an excluded project without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['SECRET'])));
+
+      const result = await client.callTool({
+        name: 'jira_postIssueComment',
+        arguments: { issueKey: 'SECRET-5', comment: 'hello' },
+      });
+
+      expect(result.isError).toBeFalsy();
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/SECRET.*excluded/i);
+      expect(IssueService.addComment).not.toHaveBeenCalled();
+    });
+
+    it('blocks jira_getTransitions for an excluded project without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['SECRET'])));
+
+      const result = await client.callTool({
+        name: 'jira_getTransitions',
+        arguments: { issueKey: 'SECRET-5' },
+      });
+
+      expect(result.isError).toBeFalsy();
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/SECRET.*excluded/i);
+      expect(IssueService.getTransitions).not.toHaveBeenCalled();
+    });
+
+    it('blocks jira_transitionIssue for an excluded project without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['SECRET'])));
+
+      const result = await client.callTool({
+        name: 'jira_transitionIssue',
+        arguments: { issueKey: 'SECRET-5', transitionId: '21' },
+      });
+
+      expect(result.isError).toBeFalsy();
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/SECRET.*excluded/i);
+      expect(IssueService.doTransition).not.toHaveBeenCalled();
     });
 
     it('allows access to non-excluded project', async () => {

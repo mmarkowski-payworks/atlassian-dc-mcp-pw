@@ -80,6 +80,23 @@ describe('Confluence MCP server — integration', () => {
       expect(result.isError).toBe(true);
       expect(ContentResourceService.createContent).not.toHaveBeenCalled();
     });
+
+    it('rejects confluence_updateContent when required version is missing', async () => {
+      ({ client, server } = await buildClient(makeService()));
+      const result = await client.callTool({
+        name: 'confluence_updateContent',
+        arguments: { contentId: '1', title: 'New Title' },
+      });
+      expect(result.isError).toBe(true);
+      expect(ContentResourceService.updateContent).not.toHaveBeenCalled();
+    });
+
+    it('rejects confluence_searchSpace when required searchText is missing', async () => {
+      ({ client, server } = await buildClient(makeService()));
+      const result = await client.callTool({ name: 'confluence_searchSpace', arguments: {} });
+      expect(result.isError).toBe(true);
+      expect(SearchService.search1).not.toHaveBeenCalled();
+    });
   });
 
   describe('exclusion enforcement through MCP boundary', () => {
@@ -150,6 +167,22 @@ describe('Confluence MCP server — integration', () => {
       // search1 receives: (cqlContext, expand, includeArchivedSpaces, excerpt, start, limit, cql)
       const args = SearchService.search1.mock.calls[0] as unknown[];
       const calledCql = args.find(a => typeof a === 'string' && a.includes('type = page')) as string;
+      expect(calledCql).toMatch(/space\.key NOT IN/i);
+      expect(calledCql).toMatch(/"HR"/);
+    });
+
+    it('injects NOT IN clause into CQL for confluence_searchSpace', async () => {
+      SearchService.search1.mockResolvedValue({ results: [], totalSize: 0 });
+      ({ client, server } = await buildClient(makeService(['HR'])));
+
+      await client.callTool({
+        name: 'confluence_searchSpace',
+        arguments: { searchText: 'engineering' },
+      });
+
+      expect(SearchService.search1).toHaveBeenCalledTimes(1);
+      const args = SearchService.search1.mock.calls[0] as unknown[];
+      const calledCql = args.find(a => typeof a === 'string' && a.includes('engineering')) as string;
       expect(calledCql).toMatch(/space\.key NOT IN/i);
       expect(calledCql).toMatch(/"HR"/);
     });

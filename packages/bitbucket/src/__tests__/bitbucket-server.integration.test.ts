@@ -21,6 +21,9 @@ jest.mock('../bitbucket-client/index.js', () => ({
     getRepositories: jest.fn(),
     getRepository: jest.fn(),
   },
+  RepositoryService: {
+    getCommits: jest.fn(),
+  },
   OpenAPI: { BASE: '', TOKEN: '', VERSION: '' },
 }));
 
@@ -35,6 +38,14 @@ const { ProjectService } = require('../bitbucket-client/index.js') as {
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { PullRequestsService } = require('../bitbucket-client/index.js') as {
   PullRequestsService: Record<string, jest.Mock>;
+};
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { RepositoryService } = require('../bitbucket-client/index.js') as {
+  RepositoryService: Record<string, jest.Mock>;
+};
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { request: mockRequest } = require('../bitbucket-client/core/request.js') as {
+  request: jest.Mock;
 };
 
 async function buildClient(service: BitbucketService) {
@@ -111,6 +122,26 @@ describe('Bitbucket MCP server — integration', () => {
       });
       expect(result.isError).toBe(true);
     });
+
+    it('rejects bitbucket_createPullRequest when required fromRefId is missing', async () => {
+      ({ client, server } = await buildClient(makeService()));
+      const result = await client.callTool({
+        name: 'bitbucket_createPullRequest',
+        arguments: { projectKey: 'PROJ', repositorySlug: 'my-repo', title: 'My PR', toRefId: 'refs/heads/main' },
+      });
+      expect(result.isError).toBe(true);
+      expect(PullRequestsService.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects bitbucket_postPullRequestComment when text exceeds max length', async () => {
+      ({ client, server } = await buildClient(makeService()));
+      const result = await client.callTool({
+        name: 'bitbucket_postPullRequestComment',
+        arguments: { projectKey: 'PROJ', repositorySlug: 'my-repo', pullRequestId: '1', text: 'x'.repeat(32001) },
+      });
+      expect(result.isError).toBe(true);
+      expect(PullRequestsService.createComment2).not.toHaveBeenCalled();
+    });
   });
 
   describe('exclusion enforcement through MCP boundary', () => {
@@ -179,6 +210,170 @@ describe('Bitbucket MCP server — integration', () => {
       const slugs = (payload.data.values as Array<{ slug: string }>).map(r => r.slug);
       expect(slugs).toEqual(['open-repo']);
       expect(slugs).not.toContain('secret-repo');
+    });
+
+    it('blocks bitbucket_getCommits for an excluded repo without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['PROJ/locked-repo'])));
+
+      const result = await client.callTool({
+        name: 'bitbucket_getCommits',
+        arguments: { projectKey: 'PROJ', repositorySlug: 'locked-repo' },
+      });
+
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/excluded/i);
+      expect(RepositoryService.getCommits).not.toHaveBeenCalled();
+    });
+
+    it('blocks bitbucket_getPullRequest for an excluded repo without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['PROJ/locked-repo'])));
+
+      const result = await client.callTool({
+        name: 'bitbucket_getPullRequest',
+        arguments: { projectKey: 'PROJ', repositorySlug: 'locked-repo', pullRequestId: '1' },
+      });
+
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/excluded/i);
+      expect(PullRequestsService.get3).not.toHaveBeenCalled();
+    });
+
+    it('blocks bitbucket_getPR_CommentsAndAction for an excluded repo without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['PROJ/locked-repo'])));
+
+      const result = await client.callTool({
+        name: 'bitbucket_getPR_CommentsAndAction',
+        arguments: { projectKey: 'PROJ', repositorySlug: 'locked-repo', pullRequestId: '1' },
+      });
+
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/excluded/i);
+      expect(PullRequestsService.getActivities).not.toHaveBeenCalled();
+    });
+
+    it('blocks bitbucket_getPullRequestChanges for an excluded repo without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['PROJ/locked-repo'])));
+
+      const result = await client.callTool({
+        name: 'bitbucket_getPullRequestChanges',
+        arguments: { projectKey: 'PROJ', repositorySlug: 'locked-repo', pullRequestId: '1' },
+      });
+
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/excluded/i);
+      expect(PullRequestsService.streamChanges1).not.toHaveBeenCalled();
+    });
+
+    it('blocks bitbucket_postPullRequestComment for an excluded repo without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['PROJ/locked-repo'])));
+
+      const result = await client.callTool({
+        name: 'bitbucket_postPullRequestComment',
+        arguments: { projectKey: 'PROJ', repositorySlug: 'locked-repo', pullRequestId: '1', text: 'hello' },
+      });
+
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/excluded/i);
+      expect(PullRequestsService.createComment2).not.toHaveBeenCalled();
+    });
+
+    it('blocks bitbucket_submitPullRequestReview for an excluded repo without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['PROJ/locked-repo'])));
+
+      const result = await client.callTool({
+        name: 'bitbucket_submitPullRequestReview',
+        arguments: { projectKey: 'PROJ', repositorySlug: 'locked-repo', pullRequestId: '1', userSlug: 'tester', status: 'APPROVED' },
+      });
+
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/excluded/i);
+      expect(PullRequestsService.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('blocks bitbucket_getPullRequestDiff for an excluded repo without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['PROJ/locked-repo'])));
+
+      const result = await client.callTool({
+        name: 'bitbucket_getPullRequestDiff',
+        arguments: { projectKey: 'PROJ', repositorySlug: 'locked-repo', pullRequestId: '1', path: 'src/foo.ts' },
+      });
+
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/excluded/i);
+      expect(mockRequest).not.toHaveBeenCalled();
+    });
+
+    it('blocks bitbucket_updatePullRequest for an excluded repo without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['PROJ/locked-repo'])));
+
+      const result = await client.callTool({
+        name: 'bitbucket_updatePullRequest',
+        arguments: { projectKey: 'PROJ', repositorySlug: 'locked-repo', pullRequestId: '1', version: 1 },
+      });
+
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/excluded/i);
+      expect(PullRequestsService.update).not.toHaveBeenCalled();
+    });
+
+    it('blocks bitbucket_getRequiredReviewers for an excluded repo without calling the API', async () => {
+      ({ client, server } = await buildClient(makeService(['PROJ/locked-repo'])));
+
+      const result = await client.callTool({
+        name: 'bitbucket_getRequiredReviewers',
+        arguments: { projectKey: 'PROJ', repositorySlug: 'locked-repo', sourceRefId: 'refs/heads/feature', targetRefId: 'refs/heads/main' },
+      });
+
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(false);
+      expect(payload.error).toMatch(/excluded/i);
+      expect(PullRequestsService.getReviewers).not.toHaveBeenCalled();
+    });
+
+    it('silently filters excluded repos from bitbucket_getInboxPullRequests response', async () => {
+      mockRequest.mockResolvedValue({
+        values: [
+          { id: 1, title: 'excluded', toRef: { repository: { slug: 'secret-repo', project: { key: 'PROJ' } } }, fromRef: { repository: { slug: 'secret-repo', project: { key: 'PROJ' } } }, reviewers: [], participants: [], links: {} },
+          { id: 2, title: 'allowed', toRef: { repository: { slug: 'open-repo', project: { key: 'PROJ' } } }, fromRef: { repository: { slug: 'open-repo', project: { key: 'PROJ' } } }, reviewers: [], participants: [], links: {} },
+        ],
+        isLastPage: true,
+      });
+      ({ client, server } = await buildClient(makeService(['PROJ/secret-repo'])));
+
+      const result = await client.callTool({ name: 'bitbucket_getInboxPullRequests', arguments: {} });
+
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(true);
+      const raw = JSON.stringify(payload.data);
+      expect(raw).not.toMatch(/"id":1/);
+      expect(raw).toMatch(/"id":2/);
+    });
+
+    it('silently filters excluded repos from bitbucket_getDashboardPullRequests response', async () => {
+      mockRequest.mockResolvedValue({
+        values: [
+          { id: 10, toRef: { repository: { slug: 'secret-repo', project: { key: 'PROJ' } } } },
+          { id: 11, toRef: { repository: { slug: 'open-repo', project: { key: 'PROJ' } } } },
+        ],
+        isLastPage: true,
+      });
+      ({ client, server } = await buildClient(makeService(['PROJ/secret-repo'])));
+
+      const result = await client.callTool({ name: 'bitbucket_getDashboardPullRequests', arguments: {} });
+
+      const payload = JSON.parse(((result as { content: Array<{ text: string }> }).content[0]).text);
+      expect(payload.success).toBe(true);
+      const ids = (payload.data.values as Array<{ id: number }>).map(pr => pr.id);
+      expect(ids).toEqual([11]);
+      expect(ids).not.toContain(10);
     });
 
     it('allows access to a non-excluded repo', async () => {
