@@ -160,6 +160,56 @@ Windows example path:
 }
 ```
 
+## Controlling Which Projects and Spaces Are Accessible
+
+You can prevent the AI from reading or writing specific Jira projects, Confluence spaces, or (future) Bitbucket repositories by configuring exclusion lists. Excluded resources are invisible to the AI — searches omit them and any attempt to read or write them is rejected.
+
+### User-level exclusions (env var or config file)
+
+Set these variables in your environment, `.env` file, or shared config file:
+
+| Variable | Scope | Example |
+|---|---|---|
+| `JIRA_EXCLUDED_PROJECTS` | Jira project keys | `PROJ1,PROJ2` |
+| `CONFLUENCE_EXCLUDED_SPACES` | Confluence space keys | `~personal,ARCHIVE` |
+
+```dotenv
+# Exclude two Jira projects
+JIRA_EXCLUDED_PROJECTS=INTERNAL,SANDBOX
+
+# Exclude a personal space and an archive space in Confluence
+CONFLUENCE_EXCLUDED_SPACES=~johndoe,ARCHIVE
+```
+
+Values are comma-separated. Whitespace around each key is trimmed. Keys are case-sensitive and must match exactly as they appear in Jira/Confluence.
+
+### Org-level exclusions (admin-deployed config file)
+
+For corporate environments where admins need to enforce exclusions that individual users cannot override, deploy an org config file to the well-known path for your platform:
+
+| Platform | Path |
+|---|---|
+| **Windows** | `%PROGRAMDATA%\AtlassianMCP\org.env` (typically `C:\ProgramData\AtlassianMCP\org.env`) |
+| **Linux / macOS** | `/etc/atlassian-dc-mcp/org.env` |
+
+The file uses the same dotenv format and supports the same exclusion variables:
+
+```dotenv
+# C:\ProgramData\AtlassianMCP\org.env  (Windows example)
+JIRA_EXCLUDED_PROJECTS=CONFIDENTIAL,HR,LEGAL
+CONFLUENCE_EXCLUDED_SPACES=HR,LEGAL,EXEC
+```
+
+**How the two layers are combined:**
+
+- Org exclusions and user exclusions are **unioned** — both lists apply simultaneously.
+- Org entries **cannot be removed** by users. A user setting `JIRA_EXCLUDED_PROJECTS=` (empty) does not remove org-level entries.
+- Duplicate keys are deduplicated automatically.
+- The org config file is **silently ignored** when absent, so environments without it (dev machines, CI, containers) continue working normally.
+- The path is hard-wired and **not configurable by users**, so it cannot be redirected to a different file.
+
+Admins can deploy the org config file via SCCM, Intune, or Group Policy (Windows) or configuration management tools such as Ansible, Chef, or Puppet (Linux/macOS).
+
 ## Claude Code CLI Configuration
 
 To use these MCP connectors with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), add MCP servers using the `claude mcp add` command.
