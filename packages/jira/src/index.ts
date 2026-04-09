@@ -1,6 +1,6 @@
 import { connectServer, createMcpServer, formatToolResponse, initializeRuntimeConfig } from '@atlassian-dc-mcp/common';
 import { JiraService, jiraToolSchemas } from './jira-service.js';
-import { getDefaultPageSize, getJiraRuntimeConfig } from './config.js';
+import { getDefaultPageSize, getJiraExcludedProjects, getJiraRuntimeConfig } from './config.js';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -19,6 +19,7 @@ const jiraService = new JiraService(
   () => getJiraRuntimeConfig().token,
   jiraConfig.apiBasePath,
   getDefaultPageSize,
+  getJiraExcludedProjects,
 );
 
 const server = createMcpServer({

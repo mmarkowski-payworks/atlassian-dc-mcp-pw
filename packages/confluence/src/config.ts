@@ -8,6 +8,10 @@ export function getDefaultPageSize() {
   return getConfluenceRuntimeConfig().defaultPageSize;
 }
 
+export function getConfluenceExcludedSpaces(): string[] {
+  return getConfluenceRuntimeConfig().excludedItems;
+}
+
 export function getMissingConfig() {
   return validateProductRuntimeConfig('confluence');
 }
