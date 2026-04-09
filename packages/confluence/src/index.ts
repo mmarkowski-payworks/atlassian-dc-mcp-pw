@@ -1,7 +1,7 @@
 import { connectServer, createMcpServer, formatToolResponse, initializeRuntimeConfig } from '@atlassian-dc-mcp/common';
 import { ConfluenceService, ConfluenceContent, confluenceToolSchemas } from './confluence-service.js';
 import { shapeConfluenceMutationAck } from './confluence-response-mapper.js';
-import { getConfluenceRuntimeConfig, getDefaultPageSize } from './config.js';
+import { getConfluenceExcludedSpaces, getConfluenceRuntimeConfig, getDefaultPageSize } from './config.js';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -21,7 +21,8 @@ const confluenceService = new ConfluenceService(
   confluenceConfig.host,
   () => getConfluenceRuntimeConfig().token,
   confluenceConfig.apiBasePath,
-  getDefaultPageSize
+  getDefaultPageSize,
+  getConfluenceExcludedSpaces,
 );
 
 // Define Confluence instance type
@@ -108,6 +109,12 @@ server.tool(
       title: string;
       space: { key: string };
     };
+
+    // Enforce exclusion before any write — prevents reading then silently failing.
+    const spaceKey = contentData.space?.key;
+    if (spaceKey && confluenceService.isSpaceExcluded(spaceKey)) {
+      return formatToolResponse(confluenceService.spaceExclusionError(spaceKey));
+    }
 
     const updateObj: ConfluenceContent = {
       id: contentId,

@@ -278,3 +278,243 @@ describe('ConfluenceService token optimization paths', () => {
     );
   });
 });
+
+describe('ConfluenceService space exclusions', () => {
+  const makeService = (excluded: string[]) =>
+    new ConfluenceService('host', 'token', undefined, () => 25, () => excluded);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('searchContent — CQL injection', () => {
+    it('injects NOT IN clause for a single excluded space', async () => {
+      (SearchService.search1 as jest.Mock).mockResolvedValue({ results: [] });
+      await makeService(['EXCL']).searchContent('type=page');
+      expect(SearchService.search1).toHaveBeenCalledWith(
+        undefined, undefined, undefined, '25', undefined, 'none',
+        '(type=page) AND space.key NOT IN ("EXCL")'
+      );
+    });
+
+    it('injects NOT IN clause for multiple excluded spaces', async () => {
+      (SearchService.search1 as jest.Mock).mockResolvedValue({ results: [] });
+      await makeService(['EXCL', 'ARCHIVE', 'LEGACY']).searchContent('type=page');
+      expect(SearchService.search1).toHaveBeenCalledWith(
+        undefined, undefined, undefined, '25', undefined, 'none',
+        '(type=page) AND space.key NOT IN ("EXCL", "ARCHIVE", "LEGACY")'
+      );
+    });
+
+    it('preserves ORDER BY at the end of the modified CQL', async () => {
+      (SearchService.search1 as jest.Mock).mockResolvedValue({ results: [] });
+      await makeService(['EXCL']).searchContent('type=page ORDER BY created DESC');
+      expect(SearchService.search1).toHaveBeenCalledWith(
+        undefined, undefined, undefined, '25', undefined, 'none',
+        '(type=page) AND space.key NOT IN ("EXCL") ORDER BY created DESC'
+      );
+    });
+
+    it('passes CQL unchanged when no spaces are excluded', async () => {
+      (SearchService.search1 as jest.Mock).mockResolvedValue({ results: [] });
+      await makeService([]).searchContent('type=page ORDER BY created DESC');
+      expect(SearchService.search1).toHaveBeenCalledWith(
+        undefined, undefined, undefined, '25', undefined, 'none',
+        'type=page ORDER BY created DESC'
+      );
+    });
+
+    it('calls API and returns results for a non-excluded search', async () => {
+      const mockData = { results: [{ id: '1' }] };
+      (SearchService.search1 as jest.Mock).mockResolvedValue(mockData);
+      const result = await makeService(['EXCL']).searchContent('type=page AND space.key = ALLOWED');
+      expect(result.success).toBe(true);
+      expect(result.data).toBe(mockData);
+      expect(SearchService.search1).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('searchSpaces — CQL injection', () => {
+    it('appends exclusion clause to the generated space CQL', async () => {
+      (SearchService.search1 as jest.Mock).mockResolvedValue({ results: [] });
+      await makeService(['EXCL']).searchSpaces('my space');
+      expect(SearchService.search1).toHaveBeenCalledWith(
+        undefined, undefined, undefined, '25', undefined, 'none',
+        'type=space AND title ~ "my space" AND space.key NOT IN ("EXCL")'
+      );
+    });
+
+    it('appends multiple excluded spaces', async () => {
+      (SearchService.search1 as jest.Mock).mockResolvedValue({ results: [] });
+      await makeService(['EXCL', 'ARCHIVE']).searchSpaces('docs');
+      expect(SearchService.search1).toHaveBeenCalledWith(
+        undefined, undefined, undefined, '25', undefined, 'none',
+        'type=space AND title ~ "docs" AND space.key NOT IN ("EXCL", "ARCHIVE")'
+      );
+    });
+
+    it('does not append exclusion when list is empty', async () => {
+      (SearchService.search1 as jest.Mock).mockResolvedValue({ results: [] });
+      await makeService([]).searchSpaces('docs');
+      expect(SearchService.search1).toHaveBeenCalledWith(
+        undefined, undefined, undefined, '25', undefined, 'none',
+        'type=space AND title ~ "docs"'
+      );
+    });
+  });
+
+  describe('CQL escaping of excluded space keys', () => {
+    it('escapes double quotes in excluded space key in searchContent', async () => {
+      (SearchService.search1 as jest.Mock).mockResolvedValue({ results: [] });
+      await makeService(['SP"ACE']).searchContent('type=page');
+      expect(SearchService.search1).toHaveBeenCalledWith(
+        undefined, undefined, undefined, '25', undefined, 'none',
+        '(type=page) AND space.key NOT IN ("SP\\"ACE")'
+      );
+    });
+
+    it('escapes backslashes in excluded space key in searchContent', async () => {
+      (SearchService.search1 as jest.Mock).mockResolvedValue({ results: [] });
+      await makeService(['SP\\ACE']).searchContent('type=page');
+      expect(SearchService.search1).toHaveBeenCalledWith(
+        undefined, undefined, undefined, '25', undefined, 'none',
+        '(type=page) AND space.key NOT IN ("SP\\\\ACE")'
+      );
+    });
+
+    it('escapes double quotes in excluded space key in searchSpaces', async () => {
+      (SearchService.search1 as jest.Mock).mockResolvedValue({ results: [] });
+      await makeService(['SP"ACE']).searchSpaces('docs');
+      expect(SearchService.search1).toHaveBeenCalledWith(
+        undefined, undefined, undefined, '25', undefined, 'none',
+        'type=space AND title ~ "docs" AND space.key NOT IN ("SP\\"ACE")'
+      );
+    });
+
+    it('escapes backslashes in excluded space key in searchSpaces', async () => {
+      (SearchService.search1 as jest.Mock).mockResolvedValue({ results: [] });
+      await makeService(['SP\\ACE']).searchSpaces('docs');
+      expect(SearchService.search1).toHaveBeenCalledWith(
+        undefined, undefined, undefined, '25', undefined, 'none',
+        'type=space AND title ~ "docs" AND space.key NOT IN ("SP\\\\ACE")'
+      );
+    });
+  });
+
+  describe('createContent', () => {
+    it('blocks request and does not call API when space is excluded', async () => {
+      const result = await makeService(['EXCL']).createContent({ type: 'page', title: 'T', space: { key: 'EXCL' } });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/EXCL/);
+      expect(result.error).toContain('excluded');
+      expect(ContentResourceService.createContent).not.toHaveBeenCalled();
+    });
+
+    it('calls API with correct args when space is allowed', async () => {
+      const payload = { type: 'page', title: 'T', space: { key: 'ALLOWED' }, body: { storage: { value: '<p/>', representation: 'storage' as const } } };
+      (ContentResourceService.createContent as jest.Mock).mockResolvedValue({ id: '1', ...payload });
+      const result = await makeService(['EXCL']).createContent(payload);
+      expect(result.success).toBe(true);
+      expect(ContentResourceService.createContent).toHaveBeenCalledWith(payload);
+    });
+  });
+
+  describe('updateContent', () => {
+    it('blocks request and does not call API when space is excluded', async () => {
+      const result = await makeService(['EXCL']).updateContent('123', {
+        type: 'page', title: 'T', space: { key: 'EXCL' }, version: { number: 2 },
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/EXCL/);
+      expect(ContentResourceService.update2).not.toHaveBeenCalled();
+    });
+
+    it('calls API when space is allowed', async () => {
+      const payload = { type: 'page', title: 'T', space: { key: 'ALLOWED' }, version: { number: 2 } };
+      (ContentResourceService.update2 as jest.Mock).mockResolvedValue({ id: '123', ...payload });
+      const result = await makeService(['EXCL']).updateContent('123', payload);
+      expect(result.success).toBe(true);
+      expect(ContentResourceService.update2).toHaveBeenCalledWith('123', payload);
+    });
+  });
+
+  describe('isSpaceExcluded — public check for tool-handler use', () => {
+    it('returns true when space key is in excluded list', () => {
+      expect(makeService(['EXCL']).isSpaceExcluded('EXCL')).toBe(true);
+    });
+
+    it('returns true case-insensitively', () => {
+      expect(makeService(['excl']).isSpaceExcluded('EXCL')).toBe(true);
+      expect(makeService(['EXCL']).isSpaceExcluded('excl')).toBe(true);
+    });
+
+    it('returns false when space key is not in excluded list', () => {
+      expect(makeService(['EXCL']).isSpaceExcluded('ALLOWED')).toBe(false);
+    });
+
+    it('returns false when exclusion list is empty', () => {
+      expect(makeService([]).isSpaceExcluded('ANYTHING')).toBe(false);
+    });
+  });
+
+  describe('getContent', () => {
+    it('blocks and returns error when retrieved content belongs to excluded space', async () => {
+      (ContentResourceService.getContentById as jest.Mock).mockResolvedValue({
+        id: '123', type: 'page', title: 'T',
+        space: { key: 'EXCL' },
+        body: { storage: { value: '', representation: 'storage' } },
+      });
+      const result = await makeService(['EXCL']).getContent('123');
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/EXCL/);
+    });
+
+    it('returns content normally when space is not excluded', async () => {
+      const mockContent = {
+        id: '123', type: 'page', title: 'T',
+        space: { key: 'ALLOWED' },
+        body: { storage: { value: '<p>Hi</p>', representation: 'storage' } },
+      };
+      (ContentResourceService.getContentById as jest.Mock).mockResolvedValue(mockContent);
+      const result = await makeService(['EXCL']).getContent('123');
+      expect(result.success).toBe(true);
+      expect(ContentResourceService.getContentById).toHaveBeenCalledWith('123', 'body.storage');
+    });
+
+    it('still fetches from API before checking space exclusion', async () => {
+      (ContentResourceService.getContentById as jest.Mock).mockResolvedValue({
+        id: '99', type: 'page', title: 'S', space: { key: 'EXCL' },
+        body: { storage: { value: '', representation: 'storage' } },
+      });
+      await makeService(['EXCL']).getContent('99');
+      expect(ContentResourceService.getContentById).toHaveBeenCalledWith('99', 'body.storage');
+    });
+  });
+
+  describe('edge cases', () => {
+    it('is case-insensitive: lowercase exclusion blocks uppercase space key', async () => {
+      const result = await makeService(['excl']).createContent({ type: 'page', title: 'T', space: { key: 'EXCL' } });
+      expect(result.success).toBe(false);
+      expect(ContentResourceService.createContent).not.toHaveBeenCalled();
+    });
+
+    it('is case-insensitive: uppercase exclusion blocks lowercase space key', async () => {
+      const result = await makeService(['EXCL']).createContent({ type: 'page', title: 'T', space: { key: 'excl' } });
+      expect(result.success).toBe(false);
+      expect(ContentResourceService.createContent).not.toHaveBeenCalled();
+    });
+
+    it('does not block when exclusion list is empty', async () => {
+      (ContentResourceService.createContent as jest.Mock).mockResolvedValue({ id: '1' });
+      const result = await makeService([]).createContent({ type: 'page', title: 'T', space: { key: 'ANYTHING' } });
+      expect(result.success).toBe(true);
+      expect(ContentResourceService.createContent).toHaveBeenCalled();
+    });
+
+    it('error message identifies the blocked space key', async () => {
+      const result = await makeService(['BLOCKED']).createContent({ type: 'page', title: 'T', space: { key: 'BLOCKED' } });
+      expect(result.error).toContain('BLOCKED');
+      expect(result.error).toContain('excluded');
+    });
+  });
+});

@@ -4,6 +4,28 @@ import { handleApiOperation } from '@atlassian-dc-mcp/common';
 import { getDefaultPageSize, getMissingConfig } from './config.js';
 import { ConfluenceBodyMode, shapeConfluenceContent } from './confluence-response-mapper.js';
 
+const ESCAPED_DOUBLE_QUOTE = String.raw`\"`;
+
+/**
+ * Appends a space exclusion clause to a CQL string, preserving any trailing ORDER BY.
+ * E.g. "(original) AND space.key NOT IN ("EXCL1","EXCL2") ORDER BY created"
+ */
+function escapeCqlKey(key: string): string {
+  return key.replace(/\\/g, '\\\\').replace(/"/g, ESCAPED_DOUBLE_QUOTE);
+}
+
+function appendCqlSpaceExclusion(cql: string, excludedSpaces: string[]): string {
+  if (excludedSpaces.length === 0) return cql;
+  const keys = excludedSpaces.map(s => `"${escapeCqlKey(s)}"`).join(', ');
+  const exclusionClause = `space.key NOT IN (${keys})`;
+  const orderByMatch = cql.match(/(\s+ORDER\s+BY\s+.+)$/i);
+  if (orderByMatch) {
+    const baseCql = cql.slice(0, cql.length - orderByMatch[0].length).trim();
+    return `(${baseCql}) AND ${exclusionClause}${orderByMatch[0]}`;
+  }
+  return `(${cql}) AND ${exclusionClause}`;
+}
+
 /**
  * Escapes user input for safe use inside a CQL quoted string.
  * Escapes backslash first, then double quote, so that neither can break out of the phrase.
@@ -45,6 +67,7 @@ function resolveToken(token: string | (() => string | undefined), missingTokenMe
 
 export class ConfluenceService {
   private readonly getPageSize: () => number;
+  private readonly getExcludedSpaces: () => string[];
 
   /**
    * Creates a new ConfluenceService instance
@@ -57,6 +80,7 @@ export class ConfluenceService {
     token: string | (() => string | undefined),
     fullApiUrl?: string,
     getPageSize: () => number = getDefaultPageSize,
+    getExcludedSpaces: () => string[] = () => [],
   ) {
     if (fullApiUrl) {
       OpenAPI.BASE = fullApiUrl;
@@ -68,6 +92,16 @@ export class ConfluenceService {
     OpenAPI.TOKEN = resolveToken(token, 'Missing required environment variable: CONFLUENCE_API_TOKEN');
     OpenAPI.VERSION = '1.0';
     this.getPageSize = getPageSize;
+    this.getExcludedSpaces = getExcludedSpaces;
+  }
+
+  isSpaceExcluded(spaceKey: string): boolean {
+    const excluded = this.getExcludedSpaces();
+    return excluded.map(s => s.toUpperCase()).includes(spaceKey.toUpperCase());
+  }
+
+  spaceExclusionError(spaceKey: string) {
+    return { success: false as const, data: undefined, error: `Space ${spaceKey.toUpperCase()} is excluded from this Confluence MCP server` };
   }
   /**
    * Get a Confluence page by ID
@@ -85,6 +119,10 @@ export class ConfluenceService {
   async getContent(contentId: string, expand?: string, bodyMode: ConfluenceBodyMode = 'storage', maxBodyChars?: number) {
     const result = await this.getContentRaw(contentId, expand);
     if (result.success && result.data) {
+      const spaceKey = (result.data as { space?: { key?: string } }).space?.key;
+      if (spaceKey && this.isSpaceExcluded(spaceKey)) {
+        return this.spaceExclusionError(spaceKey);
+      }
       return {
         ...result,
         data: shapeConfluenceContent(result.data, bodyMode, maxBodyChars),
@@ -102,6 +140,8 @@ export class ConfluenceService {
    * @param expand Optional comma-separated list of properties to expand
    */
   async searchContent(cql: string, limit?: number, start?: number, expand?: string, excerpt: 'none' | 'highlight' = 'none') {
+    const excluded = this.getExcludedSpaces();
+    const effectiveCql = excluded.length > 0 ? appendCqlSpaceExclusion(cql, excluded) : cql;
     return handleApiOperation(
       () => SearchService.search1(
         undefined,
@@ -110,7 +150,7 @@ export class ConfluenceService {
         (limit ?? this.getPageSize()).toString(),
         start?.toString(),
         excerpt,
-        cql
+        effectiveCql
       ),
       'Error searching for content'
     );
@@ -121,6 +161,9 @@ export class ConfluenceService {
    * @param content The content object to create
    */
   async createContent(content: ConfluenceContent) {
+    if (this.isSpaceExcluded(content.space.key)) {
+      return this.spaceExclusionError(content.space.key);
+    }
     return handleApiOperation(() => ContentResourceService.createContent(content), 'Error creating content');
   }
 
@@ -130,6 +173,9 @@ export class ConfluenceService {
    * @param content The updated content object
    */
   async updateContent(contentId: string, content: ConfluenceContent) {
+    if (this.isSpaceExcluded(content.space.key)) {
+      return this.spaceExclusionError(content.space.key);
+    }
     return handleApiOperation(() => ContentResourceService.update2(contentId, content), 'Error updating content');
   }
 
@@ -147,10 +193,13 @@ export class ConfluenceService {
     expand?: string,
     excerpt: 'none' | 'highlight' = 'none'
   ) {
-    // Create a CQL query that searches for spaces
-    // The correct syntax for space search is: type=space AND title ~ "searchText"
     const escapedSearchText = escapeSearchTextForCql(searchText);
-    const cql = `type=space AND title ~ "${escapedSearchText}"`;
+    let cql = `type=space AND title ~ "${escapedSearchText}"`;
+    const excluded = this.getExcludedSpaces();
+    if (excluded.length > 0) {
+      const keys = excluded.map(s => `"${escapeCqlKey(s)}"`).join(', ');
+      cql += ` AND space.key NOT IN (${keys})`;
+    }
 
     return handleApiOperation(() => SearchService.search1(
       undefined,
@@ -170,39 +219,39 @@ export class ConfluenceService {
 
 export const confluenceToolSchemas = {
   getContent: {
-    contentId: z.string().describe("Confluence Data Center content ID"),
-    expand: z.string().optional().describe("Comma-separated list of properties to expand"),
+    contentId: z.string().max(255).describe("Confluence Data Center content ID"),
+    expand: z.string().max(500).optional().describe("Comma-separated list of properties to expand"),
     bodyMode: z.enum(['storage', 'text', 'none']).optional().describe("How to return the page body. Defaults to storage for backward compatibility."),
-    maxBodyChars: z.number().optional().describe("Maximum number of characters to keep when bodyMode is text")
+    maxBodyChars: z.number().int().min(1).optional().describe("Maximum number of characters to keep when bodyMode is text")
   },
   searchContent: {
-    cql: z.string().describe("Confluence Query Language (CQL) search string for Confluence Data Center"),
-    limit: z.number().optional().describe("Maximum number of results to return"),
-    start: z.number().optional().describe("Start index for pagination"),
-    expand: z.string().optional().describe("Comma-separated list of properties to expand"),
+    cql: z.string().max(10000).describe("Confluence Query Language (CQL) search string for Confluence Data Center"),
+    limit: z.number().int().min(1).max(500).optional().describe("Maximum number of results to return"),
+    start: z.number().int().min(0).optional().describe("Start index for pagination"),
+    expand: z.string().max(500).optional().describe("Comma-separated list of properties to expand"),
     excerpt: z.enum(['none', 'highlight']).optional().describe("Excerpt mode for search results. Defaults to none.")
   },
   createContent: {
-    title: z.string().describe("Title of the content"),
-    spaceKey: z.string().describe("Space key where content will be created"),
-    type: z.string().default("page").describe("Content type (page, blogpost, etc)"),
-    content: z.string().describe("Content body in Confluence Data Center \"storage\" format (confluence XML)"),
-    parentId: z.string().optional().describe("ID of the parent page (if creating a child page)"),
+    title: z.string().max(255).describe("Title of the content"),
+    spaceKey: z.string().max(255).describe("Space key where content will be created"),
+    type: z.string().max(50).default("page").describe("Content type (page, blogpost, etc)"),
+    content: z.string().max(1_000_000).describe("Content body in Confluence Data Center \"storage\" format (confluence XML)"),
+    parentId: z.string().max(255).optional().describe("ID of the parent page (if creating a child page)"),
     output: z.enum(['ack', 'full']).optional().describe("Return a compact acknowledgement or the full API response. Defaults to ack.")
   },
   updateContent: {
-    contentId: z.string().describe("ID of the content to update"),
-    title: z.string().optional().describe("New title of the content"),
-    content: z.string().optional().describe("New content body in Confluence Data Center storage format (XML-based)"),
-    version: z.number().describe("New version number (must be incremented)"),
-    versionComment: z.string().optional().describe("Comment for this version"),
+    contentId: z.string().max(255).describe("ID of the content to update"),
+    title: z.string().max(255).optional().describe("New title of the content"),
+    content: z.string().max(1_000_000).optional().describe("New content body in Confluence Data Center storage format (XML-based)"),
+    version: z.number().int().min(1).describe("New version number (must be incremented)"),
+    versionComment: z.string().max(1000).optional().describe("Comment for this version"),
     output: z.enum(['ack', 'full']).optional().describe("Return a compact acknowledgement or the full API response. Defaults to ack.")
   },
   searchSpaces: {
-    searchText: z.string().describe("Text to search for in Confluence Data Center space names or descriptions. Quotes and backslashes are escaped for CQL; pass the literal search phrase only (do not pre-escape)."),
-    limit: z.number().optional().describe("Maximum number of results to return"),
-    start: z.number().optional().describe("Start index for pagination"),
-    expand: z.string().optional().describe("Comma-separated list of properties to expand"),
+    searchText: z.string().max(1000).describe("Text to search for in Confluence Data Center space names or descriptions. Quotes and backslashes are escaped for CQL; pass the literal search phrase only (do not pre-escape)."),
+    limit: z.number().int().min(1).max(500).optional().describe("Maximum number of results to return"),
+    start: z.number().int().min(0).optional().describe("Start index for pagination"),
+    expand: z.string().max(500).optional().describe("Comma-separated list of properties to expand"),
     excerpt: z.enum(['none', 'highlight']).optional().describe("Excerpt mode for search results. Defaults to none.")
   }
 };

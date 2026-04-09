@@ -738,145 +738,145 @@ export class BitbucketService {
 
 export const bitbucketToolSchemas = {
   getProjects: {
-    name: z.string().optional().describe("Filter projects by name"),
-    permission: z.string().optional().describe("Filter projects by permission"),
-    start: z.number().optional().describe("Start number for pagination"),
-    limit: z.number().optional().describe("Number of items to return. If not passed, the package default page size is used.")
+    name: z.string().max(500).optional().describe("Filter projects by name"),
+    permission: z.string().max(100).optional().describe("Filter projects by permission"),
+    start: z.number().int().min(0).optional().describe("Start number for pagination"),
+    limit: z.number().int().min(1).max(500).optional().describe("Number of items to return. If not passed, the package default page size is used.")
   },
   getPullRequests: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug"),
-    withAttributes: z.string().optional().describe("(optional) defaults to true, whether to return additional pull request attributes"),
-    at: z.string().optional().describe("(optional) a fully-qualified branch ID to find pull requests to or from, such as refs/heads/master"),
-    withProperties: z.string().optional().describe("(optional) defaults to true, whether to return additional pull request properties"),
-    draft: z.string().optional().describe("(optional) If specified, only pull requests matching the supplied draft status will be returned"),
-    filterText: z.string().optional().describe("(optional) If specified, only pull requests where the title or description contains the supplied string will be returned"),
-    state: z.string().optional().describe("(optional, defaults to OPEN). Supply ALL to return pull request in any state. If a state is supplied only pull requests in the specified state will be returned. Either OPEN, DECLINED or MERGED"),
-    order: z.string().optional().describe("(optional, defaults to NEWEST) the order to return pull requests in, either OLDEST (as in: \"oldest first\") or NEWEST"),
-    direction: z.string().optional().describe("(optional, defaults to INCOMING) the direction relative to the specified repository. Either INCOMING or OUTGOING"),
-    start: z.number().optional().describe("Start number for the page (inclusive). If not passed, first page is assumed"),
-    limit: z.number().optional().describe("Number of items to return. If not passed, the package default page size is used.")
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug"),
+    withAttributes: z.string().max(10).optional().describe("(optional) defaults to true, whether to return additional pull request attributes"),
+    at: z.string().max(500).optional().describe("(optional) a fully-qualified branch ID to find pull requests to or from, such as refs/heads/master"),
+    withProperties: z.string().max(10).optional().describe("(optional) defaults to true, whether to return additional pull request properties"),
+    draft: z.string().max(10).optional().describe("(optional) If specified, only pull requests matching the supplied draft status will be returned"),
+    filterText: z.string().max(500).optional().describe("(optional) If specified, only pull requests where the title or description contains the supplied string will be returned"),
+    state: z.string().max(20).optional().describe("(optional, defaults to OPEN). Supply ALL to return pull request in any state. If a state is supplied only pull requests in the specified state will be returned. Either OPEN, DECLINED or MERGED"),
+    order: z.string().max(20).optional().describe("(optional, defaults to NEWEST) the order to return pull requests in, either OLDEST (as in: \"oldest first\") or NEWEST"),
+    direction: z.string().max(20).optional().describe("(optional, defaults to INCOMING) the direction relative to the specified repository. Either INCOMING or OUTGOING"),
+    start: z.number().int().min(0).optional().describe("Start number for the page (inclusive). If not passed, first page is assumed"),
+    limit: z.number().int().min(1).max(500).optional().describe("Number of items to return. If not passed, the package default page size is used.")
   },
   getPullRequest: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug"),
-    pullRequestId: z.string().describe("The ID of the pull request within the repository")
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug"),
+    pullRequestId: z.string().max(20).describe("The ID of the pull request within the repository")
   },
   getProject: {
-    projectKey: z.string().describe("The project key")
+    projectKey: z.string().max(255).describe("The project key")
   },
   getRepositories: {
-    projectKey: z.string().describe("The project key"),
-    start: z.number().optional().describe("Start number for pagination"),
-    limit: z.number().optional().describe("Number of items to return. If not passed, the package default page size is used.")
+    projectKey: z.string().max(255).describe("The project key"),
+    start: z.number().int().min(0).optional().describe("Start number for pagination"),
+    limit: z.number().int().min(1).max(500).optional().describe("Number of items to return. If not passed, the package default page size is used.")
   },
   getRepository: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug")
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug")
   },
   getCommits: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug"),
-    path: z.string().optional().describe("Optional path to filter commits by"),
-    since: z.string().optional().describe("The commit ID (exclusively) to retrieve commits after"),
-    until: z.string().optional().describe("The commit ID (inclusively) to retrieve commits before"),
-    limit: z.number().optional().describe("Number of items to return. If not passed, the package default page size is used.")
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug"),
+    path: z.string().max(500).optional().describe("Optional path to filter commits by"),
+    since: z.string().max(100).optional().describe("The commit ID (exclusively) to retrieve commits after"),
+    until: z.string().max(100).optional().describe("The commit ID (inclusively) to retrieve commits before"),
+    limit: z.number().int().min(1).max(500).optional().describe("Number of items to return. If not passed, the package default page size is used.")
   },
   getPullRequestComments: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug"),
-    pullRequestId: z.string().describe("The pull request ID"),
-    start: z.number().optional().describe("Start number for pagination"),
-    limit: z.number().optional().describe("Number of items to return. If not passed, the package default page size is used."),
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug"),
+    pullRequestId: z.string().max(20).describe("The pull request ID"),
+    start: z.number().int().min(0).optional().describe("Start number for pagination"),
+    limit: z.number().int().min(1).max(500).optional().describe("Number of items to return. If not passed, the package default page size is used."),
     output: z.enum(['summary', 'compact', 'full']).optional().describe("Choose between summary lines, compact structured output, or the full API payload. Defaults to compact."),
     includeResolved: z.boolean().optional().describe("Include resolved comment threads and their replies. Defaults to false, so resolved threads are omitted.")
   },
   getPullRequestChanges: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug"),
-    pullRequestId: z.string().describe("The pull request ID"),
-    sinceId: z.string().optional().describe("The since commit hash to stream changes for a RANGE arbitrary change scope"),
-    changeScope: z.string().optional().describe("UNREVIEWED for unreviewed changes, RANGE for changes between commits, ALL for all changes (default)"),
-    untilId: z.string().optional().describe("The until commit hash to stream changes for a RANGE arbitrary change scope"),
-    withComments: z.string().optional().describe("true to apply comment counts in the changes (default), false to stream changes without comment counts"),
-    start: z.number().optional().describe("Start number for pagination"),
-    limit: z.number().optional().describe("Number of items to return. If not passed, the package default page size is used."),
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug"),
+    pullRequestId: z.string().max(20).describe("The pull request ID"),
+    sinceId: z.string().max(100).optional().describe("The since commit hash to stream changes for a RANGE arbitrary change scope"),
+    changeScope: z.string().max(20).optional().describe("UNREVIEWED for unreviewed changes, RANGE for changes between commits, ALL for all changes (default)"),
+    untilId: z.string().max(100).optional().describe("The until commit hash to stream changes for a RANGE arbitrary change scope"),
+    withComments: z.string().max(10).optional().describe("true to apply comment counts in the changes (default), false to stream changes without comment counts"),
+    start: z.number().int().min(0).optional().describe("Start number for pagination"),
+    limit: z.number().int().min(1).max(500).optional().describe("Number of items to return. If not passed, the package default page size is used."),
     output: z.enum(['summary', 'compact', 'full']).optional().describe("Choose between summary lines, compact structured output, or the full API payload. Defaults to compact.")
   },
   postPullRequestComment: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug"),
-    pullRequestId: z.string().describe("The pull request ID"),
-    text: z.string().describe("The comment text"),
-    parentId: z.number().optional().describe("Parent comment ID for replies"),
-    filePath: z.string().optional().describe("File path for file-specific comments"),
-    line: z.number().optional().describe("Line number for line-specific comments"),
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug"),
+    pullRequestId: z.string().max(20).describe("The pull request ID"),
+    text: z.string().max(32000).describe("The comment text"),
+    parentId: z.number().int().min(1).optional().describe("Parent comment ID for replies"),
+    filePath: z.string().max(500).optional().describe("File path for file-specific comments"),
+    line: z.number().int().min(1).optional().describe("Line number for line-specific comments"),
     lineType: z.enum(['ADDED', 'REMOVED', 'CONTEXT']).optional().describe("Line type for line comments"),
     pending: z.boolean().optional().describe("If true, creates a pending (draft) comment not visible to others until the review is submitted via bitbucket_submitPullRequestReview. Only works when filePath is provided — top-level PR comments (no filePath) are always posted live."),
     output: z.enum(['ack', 'full']).optional().describe("Return a compact acknowledgement or the full API response. Defaults to ack.")
   },
   getUser: {
-    userSlug: z.string().optional().describe("Exact slug of the user to look up (e.g. 'tdepole'). Use this to confirm a known slug or fetch a user's details."),
-    filter: z.string().optional().describe("Search string to find users by name or email. Use this to discover a user's slug when it is not known.")
+    userSlug: z.string().max(255).optional().describe("Exact slug of the user to look up (e.g. 'tdepole'). Use this to confirm a known slug or fetch a user's details."),
+    filter: z.string().max(255).optional().describe("Search string to find users by name or email. Use this to discover a user's slug when it is not known.")
   },
   submitPullRequestReview: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug"),
-    pullRequestId: z.string().describe("The pull request ID"),
-    userSlug: z.string().describe("The username/slug of the PAT token owner — the same user whose credentials are in BITBUCKET_API_TOKEN. Resolution order: (1) author.slug from any comment posted this session, (2) reviewers/participants array from getPullRequest, (3) bitbucket_getUser with a name/email filter."),
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug"),
+    pullRequestId: z.string().max(20).describe("The pull request ID"),
+    userSlug: z.string().max(255).describe("The username/slug of the PAT token owner — the same user whose credentials are in BITBUCKET_API_TOKEN. Resolution order: (1) author.slug from any comment posted this session, (2) reviewers/participants array from getPullRequest, (3) bitbucket_getUser with a name/email filter."),
     status: z.enum(['APPROVED', 'NEEDS_WORK', 'UNAPPROVED']).describe("The review verdict: APPROVED, NEEDS_WORK, or UNAPPROVED"),
-    lastReviewedCommit: z.string().optional().describe("Optional hash of the last commit reviewed, used to track review progress")
+    lastReviewedCommit: z.string().max(100).optional().describe("Optional hash of the last commit reviewed, used to track review progress")
   },
   getPullRequestDiff: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug"),
-    pullRequestId: z.string().describe("The pull request ID"),
-    path: z.string().describe("The path to the file which should be diffed. Note: Before getting diff, use getPullRequestChanges to understand what files were changed in the PR"),
-    contextLines: z.string().optional().describe("Number of context lines to include around added/removed lines in the diff"),
-    sinceId: z.string().optional().describe("The since commit hash to stream a diff between two arbitrary hashes"),
-    srcPath: z.string().optional().describe("The previous path to the file, if the file has been copied, moved or renamed"),
-    diffType: z.string().optional().describe("The type of diff being requested"),
-    untilId: z.string().optional().describe("The until commit hash to stream a diff between two arbitrary hashes"),
-    whitespace: z.string().optional().describe("Optional whitespace flag which can be set to 'ignore-all'")
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug"),
+    pullRequestId: z.string().max(20).describe("The pull request ID"),
+    path: z.string().max(500).describe("The path to the file which should be diffed. Note: Before getting diff, use getPullRequestChanges to understand what files were changed in the PR"),
+    contextLines: z.string().max(10).optional().describe("Number of context lines to include around added/removed lines in the diff"),
+    sinceId: z.string().max(100).optional().describe("The since commit hash to stream a diff between two arbitrary hashes"),
+    srcPath: z.string().max(500).optional().describe("The previous path to the file, if the file has been copied, moved or renamed"),
+    diffType: z.string().max(50).optional().describe("The type of diff being requested"),
+    untilId: z.string().max(100).optional().describe("The until commit hash to stream a diff between two arbitrary hashes"),
+    whitespace: z.string().max(20).optional().describe("Optional whitespace flag which can be set to 'ignore-all'")
   },
   createPullRequest: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug"),
-    title: z.string().describe("The pull request title"),
-    description: z.string().optional().describe("The pull request description"),
-    fromRefId: z.string().describe("The source branch reference ID (e.g., 'refs/heads/feature-branch')"),
-    toRefId: z.string().describe("The destination branch reference ID (e.g., 'refs/heads/main')"),
-    reviewers: z.array(z.string()).optional().describe("Optional array of reviewer usernames"),
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug"),
+    title: z.string().max(1000).describe("The pull request title"),
+    description: z.string().max(32000).optional().describe("The pull request description"),
+    fromRefId: z.string().max(500).describe("The source branch reference ID (e.g., 'refs/heads/feature-branch')"),
+    toRefId: z.string().max(500).describe("The destination branch reference ID (e.g., 'refs/heads/main')"),
+    reviewers: z.array(z.string().max(255)).max(50).optional().describe("Optional array of reviewer usernames"),
     output: z.enum(['ack', 'full']).optional().describe("Return a compact acknowledgement or the full API response. Defaults to ack.")
   },
   updatePullRequest: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug"),
-    pullRequestId: z.string().describe("The pull request ID"),
-    version: z.number().describe("The current version of the pull request (required for optimistic locking). Obtain this by calling bitbucket_getPullRequest first."),
-    title: z.string().optional().describe("The new title for the pull request"),
-    description: z.string().optional().describe("The new description for the pull request"),
-    reviewers: z.array(z.string()).optional().describe("Optional array of reviewer usernames to set"),
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug"),
+    pullRequestId: z.string().max(20).describe("The pull request ID"),
+    version: z.number().int().min(0).describe("The current version of the pull request (required for optimistic locking). Obtain this by calling bitbucket_getPullRequest first."),
+    title: z.string().max(1000).optional().describe("The new title for the pull request"),
+    description: z.string().max(32000).optional().describe("The new description for the pull request"),
+    reviewers: z.array(z.string().max(255)).max(50).optional().describe("Optional array of reviewer usernames to set"),
     output: z.enum(['ack', 'full']).optional().describe("Return a compact acknowledgement or the full API response. Defaults to ack.")
   },
   getRequiredReviewers: {
-    projectKey: z.string().describe("The project key"),
-    repositorySlug: z.string().describe("The repository slug"),
-    sourceRefId: z.string().describe("The ID of the source ref (e.g., 'refs/heads/feature-branch')"),
-    targetRefId: z.string().describe("The ID of the target ref (e.g., 'refs/heads/main')"),
-    sourceRepoId: z.string().optional().describe("Optional ID of the repository in which the source ref exists"),
-    targetRepoId: z.string().optional().describe("Optional ID of the repository in which the target ref exists")
+    projectKey: z.string().max(255).describe("The project key"),
+    repositorySlug: z.string().max(255).describe("The repository slug"),
+    sourceRefId: z.string().max(500).describe("The ID of the source ref (e.g., 'refs/heads/feature-branch')"),
+    targetRefId: z.string().max(500).describe("The ID of the target ref (e.g., 'refs/heads/main')"),
+    sourceRepoId: z.string().max(255).optional().describe("Optional ID of the repository in which the source ref exists"),
+    targetRepoId: z.string().max(255).optional().describe("Optional ID of the repository in which the target ref exists")
   },
   getDashboardPullRequests: {
     role: z.enum(['AUTHOR', 'REVIEWER', 'PARTICIPANT']).optional().default('AUTHOR').describe("Filter by the user's role in the PR: AUTHOR (default), REVIEWER, or PARTICIPANT"),
     state: z.enum(['OPEN', 'DECLINED', 'MERGED']).optional().default('OPEN').describe("Filter by PR state: OPEN (default), DECLINED, or MERGED"),
-    closedSince: z.number().optional().describe("Timestamp in milliseconds. If state is not OPEN, return only PRs closed after this date"),
+    closedSince: z.number().int().min(0).optional().describe("Timestamp in milliseconds. If state is not OPEN, return only PRs closed after this date"),
     order: z.enum(['NEWEST', 'OLDEST', 'PARTICIPANT']).optional().default('NEWEST').describe("Order of results: NEWEST (default), OLDEST, or PARTICIPANT"),
-    start: z.number().optional().describe("Start number for pagination"),
-    limit: z.number().optional().describe("Number of items to return. If not passed, the package default page size is used.")
+    start: z.number().int().min(0).optional().describe("Start number for pagination"),
+    limit: z.number().int().min(1).max(500).optional().describe("Number of items to return. If not passed, the package default page size is used.")
   },
   getInboxPullRequests: {
-    start: z.number().optional().describe("Start number for the page (inclusive). If not passed, first page is assumed"),
-    limit: z.number().optional().describe("Number of items to return. If not passed, the package default page size is used.")
+    start: z.number().int().min(0).optional().describe("Start number for the page (inclusive). If not passed, first page is assumed"),
+    limit: z.number().int().min(1).max(500).optional().describe("Number of items to return. If not passed, the package default page size is used.")
   }
 };

@@ -15,7 +15,8 @@ function decodeHtmlEntities(value: string): string {
     .replace(/&(nbsp|amp|lt|gt|quot);|&#39;/g, match => ENTITY_MAP[match] ?? match)
     .replace(/&#(\d+);/g, (_, code) => {
       const parsed = Number.parseInt(code, 10);
-      return Number.isNaN(parsed) ? '' : String.fromCodePoint(parsed);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 0x10FFFF) return '';
+      return String.fromCodePoint(parsed);
     });
 }
 

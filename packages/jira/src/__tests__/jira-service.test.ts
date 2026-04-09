@@ -275,6 +275,222 @@ describe('JiraService', () => {
     });
   });
 
+  describe('project exclusions', () => {
+    const makeService = (excluded: string[]) =>
+      new JiraService('test-host', 'test-token', undefined, () => 25, () => excluded);
+
+    describe('searchIssues — JQL injection', () => {
+      it('injects NOT IN clause for single excluded project', async () => {
+        (SearchService.searchUsingSearchRequest as jest.Mock).mockResolvedValue({ issues: [] });
+        await makeService(['EXCL']).searchIssues('project = TEST');
+        expect(SearchService.searchUsingSearchRequest).toHaveBeenCalledWith(
+          expect.objectContaining({ jql: '(project = TEST) AND project NOT IN ("EXCL")' })
+        );
+      });
+
+      it('injects NOT IN clause for multiple excluded projects', async () => {
+        (SearchService.searchUsingSearchRequest as jest.Mock).mockResolvedValue({ issues: [] });
+        await makeService(['EXCL', 'PRIVATE', 'LEGACY']).searchIssues('project = TEST');
+        expect(SearchService.searchUsingSearchRequest).toHaveBeenCalledWith(
+          expect.objectContaining({ jql: '(project = TEST) AND project NOT IN ("EXCL", "PRIVATE", "LEGACY")' })
+        );
+      });
+
+      it('preserves ORDER BY at the end of the modified JQL', async () => {
+        (SearchService.searchUsingSearchRequest as jest.Mock).mockResolvedValue({ issues: [] });
+        await makeService(['EXCL']).searchIssues('project = TEST ORDER BY created DESC');
+        expect(SearchService.searchUsingSearchRequest).toHaveBeenCalledWith(
+          expect.objectContaining({ jql: '(project = TEST) AND project NOT IN ("EXCL") ORDER BY created DESC' })
+        );
+      });
+
+      it('passes JQL unchanged when no projects are excluded', async () => {
+        (SearchService.searchUsingSearchRequest as jest.Mock).mockResolvedValue({ issues: [] });
+        await jiraService.searchIssues('project = TEST ORDER BY created DESC');
+        expect(SearchService.searchUsingSearchRequest).toHaveBeenCalledWith(
+          expect.objectContaining({ jql: 'project = TEST ORDER BY created DESC' })
+        );
+      });
+
+      it('calls the API and returns data for a non-excluded search', async () => {
+        const mockData = { issues: [{ key: 'OK-1' }] };
+        (SearchService.searchUsingSearchRequest as jest.Mock).mockResolvedValue(mockData);
+        const result = await makeService(['EXCL']).searchIssues('project = OK');
+        expect(result.success).toBe(true);
+        expect(result.data).toBe(mockData);
+        expect(SearchService.searchUsingSearchRequest).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('getIssue', () => {
+      it('blocks request and does not call API when project is excluded', async () => {
+        const result = await makeService(['EXCL']).getIssue('EXCL-123');
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/EXCL/);
+        expect(IssueService.getIssue).not.toHaveBeenCalled();
+      });
+
+      it('calls API with correct args and returns data when project is allowed', async () => {
+        const mockIssue = { key: 'OK-1' };
+        (IssueService.getIssue as jest.Mock).mockResolvedValue(mockIssue);
+        const result = await makeService(['EXCL']).getIssue('OK-1', 'renderedFields', ['summary']);
+        expect(result.success).toBe(true);
+        expect(result.data).toBe(mockIssue);
+        expect(IssueService.getIssue).toHaveBeenCalledWith('OK-1', 'renderedFields', ['summary']);
+      });
+    });
+
+    describe('getIssueComments', () => {
+      it('blocks request and does not call API when project is excluded', async () => {
+        const result = await makeService(['EXCL']).getIssueComments('EXCL-1');
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/EXCL/);
+        expect(IssueService.getComments).not.toHaveBeenCalled();
+      });
+
+      it('calls API and returns data when project is allowed', async () => {
+        const mockData = { comments: [] };
+        (IssueService.getComments as jest.Mock).mockResolvedValue(mockData);
+        const result = await makeService(['EXCL']).getIssueComments('OK-1');
+        expect(result.success).toBe(true);
+        expect(IssueService.getComments).toHaveBeenCalledWith('OK-1', undefined, '25', undefined, undefined);
+      });
+    });
+
+    describe('postIssueComment', () => {
+      it('blocks request and does not call API when project is excluded', async () => {
+        const result = await makeService(['EXCL']).postIssueComment('EXCL-1', 'hello');
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/EXCL/);
+        expect(IssueService.addComment).not.toHaveBeenCalled();
+      });
+
+      it('calls API and returns data when project is allowed', async () => {
+        (IssueService.addComment as jest.Mock).mockResolvedValue({ id: '1' });
+        const result = await makeService(['EXCL']).postIssueComment('OK-1', 'hello');
+        expect(result.success).toBe(true);
+        expect(IssueService.addComment).toHaveBeenCalledWith('OK-1', undefined, { body: 'hello' });
+      });
+    });
+
+    describe('createIssue', () => {
+      it('blocks request and does not call API when projectId is excluded', async () => {
+        const result = await makeService(['EXCL']).createIssue({ projectId: 'EXCL', summary: 'x', description: 'x', issueTypeId: '1' });
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/EXCL/);
+        expect(IssueService.createIssue).not.toHaveBeenCalled();
+      });
+
+      it('calls API when projectId is allowed', async () => {
+        (IssueService.createIssue as jest.Mock).mockResolvedValue({ key: 'OK-2' });
+        const result = await makeService(['EXCL']).createIssue({ projectId: 'OK', summary: 's', description: 'd', issueTypeId: '1' });
+        expect(result.success).toBe(true);
+        expect(IssueService.createIssue).toHaveBeenCalledWith(true, {
+          fields: { project: { key: 'OK' }, summary: 's', description: 'd', issuetype: { id: '1' } },
+        });
+      });
+
+      it('strips project from customFields to prevent exclusion bypass', async () => {
+        (IssueService.createIssue as jest.Mock).mockResolvedValue({ key: 'OK-2' });
+        await makeService(['EXCL']).createIssue({
+          projectId: 'OK', summary: 's', description: 'd', issueTypeId: '1',
+          customFields: { project: { key: 'EXCL' }, labels: ['bug'] },
+        });
+        expect(IssueService.createIssue).toHaveBeenCalledWith(true, {
+          fields: { project: { key: 'OK' }, summary: 's', description: 'd', issuetype: { id: '1' }, labels: ['bug'] },
+        });
+      });
+    });
+
+    describe('updateIssue', () => {
+      it('blocks request and does not call API when project is excluded', async () => {
+        const result = await makeService(['EXCL']).updateIssue({ issueKey: 'EXCL-1', summary: 'x' });
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/EXCL/);
+        expect(IssueService.editIssue).not.toHaveBeenCalled();
+      });
+
+      it('calls API when project is allowed', async () => {
+        (IssueService.editIssue as jest.Mock).mockResolvedValue(undefined);
+        const result = await makeService(['EXCL']).updateIssue({ issueKey: 'OK-1', summary: 'new' });
+        expect(result.success).toBe(true);
+        expect(IssueService.editIssue).toHaveBeenCalledWith('OK-1', 'true', { fields: { summary: 'new' } });
+      });
+
+      it('strips project from customFields to prevent exclusion bypass', async () => {
+        (IssueService.editIssue as jest.Mock).mockResolvedValue(undefined);
+        await makeService(['EXCL']).updateIssue({
+          issueKey: 'OK-1', summary: 'new',
+          customFields: { project: { key: 'EXCL' }, labels: ['urgent'] },
+        });
+        expect(IssueService.editIssue).toHaveBeenCalledWith('OK-1', 'true', {
+          fields: { summary: 'new', labels: ['urgent'] },
+        });
+      });
+    });
+
+    describe('getTransitions', () => {
+      it('blocks request and does not call API when project is excluded', async () => {
+        const result = await makeService(['EXCL']).getTransitions('EXCL-1');
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/EXCL/);
+        expect(IssueService.getTransitions).not.toHaveBeenCalled();
+      });
+
+      it('calls API and returns transitions when project is allowed', async () => {
+        const mockData = { transitions: [{ id: '1', name: 'To Do' }] };
+        (IssueService.getTransitions as jest.Mock).mockResolvedValue(mockData);
+        const result = await makeService(['EXCL']).getTransitions('OK-1');
+        expect(result.success).toBe(true);
+        expect(result.data).toBe(mockData);
+        expect(IssueService.getTransitions).toHaveBeenCalledWith('OK-1');
+      });
+    });
+
+    describe('transitionIssue', () => {
+      it('blocks request and does not call API when project is excluded', async () => {
+        const result = await makeService(['EXCL']).transitionIssue({ issueKey: 'EXCL-1', transitionId: '21' });
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/EXCL/);
+        expect(IssueService.doTransition).not.toHaveBeenCalled();
+      });
+
+      it('calls API when project is allowed', async () => {
+        (IssueService.doTransition as jest.Mock).mockResolvedValue(undefined);
+        const result = await makeService(['EXCL']).transitionIssue({ issueKey: 'OK-1', transitionId: '21' });
+        expect(result.success).toBe(true);
+        expect(IssueService.doTransition).toHaveBeenCalledWith('OK-1', { transition: { id: '21' } });
+      });
+    });
+
+    describe('edge cases', () => {
+      it('is case-insensitive: lowercase exclusion blocks uppercase issue key', async () => {
+        const result = await makeService(['excl']).getIssue('EXCL-123');
+        expect(result.success).toBe(false);
+        expect(IssueService.getIssue).not.toHaveBeenCalled();
+      });
+
+      it('is case-insensitive: uppercase exclusion blocks lowercase issue key', async () => {
+        const result = await makeService(['EXCL']).getIssue('excl-1');
+        expect(result.success).toBe(false);
+        expect(IssueService.getIssue).not.toHaveBeenCalled();
+      });
+
+      it('does not block when exclusion list is empty', async () => {
+        (IssueService.getIssue as jest.Mock).mockResolvedValue({ key: 'EXCL-1' });
+        const result = await makeService([]).getIssue('EXCL-1');
+        expect(result.success).toBe(true);
+        expect(IssueService.getIssue).toHaveBeenCalled();
+      });
+
+      it('error message identifies the blocked project key', async () => {
+        const result = await makeService(['BLOCKED']).getIssue('BLOCKED-42');
+        expect(result.error).toContain('BLOCKED');
+        expect(result.error).toContain('excluded');
+      });
+    });
+  });
+
   describe('validateConfig', () => {
     const originalEnv = process.env;
     let tempDir: string;
