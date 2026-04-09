@@ -1,6 +1,6 @@
 import { connectServer, createMcpServer, formatToolResponse, initializeRuntimeConfig } from '@atlassian-dc-mcp/common';
 import { BitbucketService, bitbucketToolSchemas } from './bitbucket-service.js';
-import { getBitbucketRuntimeConfig, getDefaultPageSize } from './config.js';
+import { getBitbucketExcludedRepos, getBitbucketRuntimeConfig, getDefaultPageSize } from './config.js';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -20,6 +20,7 @@ const bitbucketService = new BitbucketService(
   () => getBitbucketRuntimeConfig().token,
   bitbucketConfig.apiBasePath,
   getDefaultPageSize,
+  getBitbucketExcludedRepos,
 );
 
 const server = createMcpServer({

@@ -58,6 +58,7 @@ const PRODUCT_METADATA: Record<AtlassianProduct, ProductMetadata> = {
     apiBasePathKey: 'BITBUCKET_API_BASE_PATH',
     tokenKey: 'BITBUCKET_API_TOKEN',
     defaultPageSizeKey: 'BITBUCKET_DEFAULT_PAGE_SIZE',
+    excludedItemsKey: 'BITBUCKET_EXCLUDED_REPOS',
   },
 };
 

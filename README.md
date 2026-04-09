@@ -172,6 +172,7 @@ Set these variables in your environment, `.env` file, or shared config file:
 |---|---|---|
 | `JIRA_EXCLUDED_PROJECTS` | Jira project keys | `PROJ1,PROJ2` |
 | `CONFLUENCE_EXCLUDED_SPACES` | Confluence space keys | `~personal,ARCHIVE` |
+| `BITBUCKET_EXCLUDED_REPOS` | Bitbucket repos (`PROJECT/slug`) | `MYPROJ/secret-repo` |
 
 ```dotenv
 # Exclude two Jira projects
@@ -179,9 +180,16 @@ JIRA_EXCLUDED_PROJECTS=INTERNAL,SANDBOX
 
 # Exclude a personal space and an archive space in Confluence
 CONFLUENCE_EXCLUDED_SPACES=~johndoe,ARCHIVE
+
+# Exclude specific Bitbucket repositories (PROJECT/repo-slug format)
+BITBUCKET_EXCLUDED_REPOS=MYPROJ/secret-repo,INFRA/deploy-scripts
 ```
 
-Values are comma-separated. Whitespace around each key is trimmed. Keys are case-sensitive and must match exactly as they appear in Jira/Confluence.
+Values are comma-separated. Whitespace around each key is trimmed.
+
+For Jira and Confluence, keys are matched case-insensitively. For Bitbucket, both the project key and repository slug are normalised (project key to uppercase, slug to lowercase) before comparison, so `myproj/Secret-Repo` and `MYPROJ/secret-repo` are treated as the same entry.
+
+Bitbucket exclusions apply to all per-repository operations (get repo, get/create/update PRs, post comments, submit reviews, get diffs, get commits) and also filter repositories out of list results and cross-repository views (inbox, dashboard).
 
 ### Org-level exclusions (admin-deployed config file)
 
@@ -198,6 +206,7 @@ The file uses the same dotenv format and supports the same exclusion variables:
 # C:\ProgramData\AtlassianMCP\org.env  (Windows example)
 JIRA_EXCLUDED_PROJECTS=CONFIDENTIAL,HR,LEGAL
 CONFLUENCE_EXCLUDED_SPACES=HR,LEGAL,EXEC
+BITBUCKET_EXCLUDED_REPOS=INFRA/deploy-scripts,SEC/keys
 ```
 
 **How the two layers are combined:**

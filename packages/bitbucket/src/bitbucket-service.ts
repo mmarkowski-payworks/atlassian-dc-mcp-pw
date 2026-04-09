@@ -3,7 +3,7 @@ import { OpenAPI, ProjectService, PullRequestsService, RepositoryService } from 
 import { request as __request } from './bitbucket-client/core/request.js';
 import { handleApiOperation } from '@atlassian-dc-mcp/common';
 import { simplifyInboxPullRequests } from './inbox-pr-mapper.js';
-import { getDefaultPageSize, getMissingConfig } from './config.js';
+import { getBitbucketExcludedRepos, getDefaultPageSize, getMissingConfig } from './config.js';
 import {
   BitbucketMutationOutputMode,
   BitbucketOutputMode,
@@ -25,12 +25,14 @@ function resolveToken(token: string | (() => string | undefined), missingTokenMe
 
 export class BitbucketService {
   private readonly getPageSize: () => number;
+  private readonly getExcludedRepos: () => string[];
 
   constructor(
     host: string | undefined,
     token: string | (() => string | undefined),
     fullBaseUrl?: string,
     getPageSize: () => number = getDefaultPageSize,
+    getExcludedRepos: () => string[] = getBitbucketExcludedRepos,
   ) {
     if (fullBaseUrl) {
       OpenAPI.BASE = fullBaseUrl;
@@ -43,6 +45,24 @@ export class BitbucketService {
     OpenAPI.TOKEN = resolveToken(token, 'Missing required environment variable: BITBUCKET_API_TOKEN');
     OpenAPI.VERSION = '1.0';
     this.getPageSize = getPageSize;
+    this.getExcludedRepos = getExcludedRepos;
+  }
+
+  // Exclusion key format: PROJECTKEY/repo-slug (case-normalised)
+  isRepoExcluded(projectKey: string, repositorySlug: string): boolean {
+    const key = `${projectKey.toUpperCase()}/${repositorySlug.toLowerCase()}`;
+    return this.getExcludedRepos().map(r => {
+      const [p, s] = r.split('/');
+      return `${p.toUpperCase()}/${(s ?? '').toLowerCase()}`;
+    }).includes(key);
+  }
+
+  repoExclusionError(projectKey: string, repositorySlug: string) {
+    return {
+      success: false as const,
+      data: undefined,
+      error: `Repository ${projectKey.toUpperCase()}/${repositorySlug.toLowerCase()} is excluded from this Bitbucket MCP server`,
+    };
   }
 
   /**
@@ -60,6 +80,9 @@ export class BitbucketService {
   ) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     return handleApiOperation(
       () => RepositoryService.getCommits(
         projectKey,
@@ -117,10 +140,22 @@ export class BitbucketService {
    */
   async getRepositories(projectKey: string, start?: number, limit?: number) {
     projectKey = projectKey.toUpperCase();
-    return handleApiOperation(
+    const result = await handleApiOperation(
       () => ProjectService.getRepositories(projectKey, start, limit ?? this.getPageSize()),
       'Error fetching repositories'
     );
+    if (result.success && result.data) {
+      const excluded = this.getExcludedRepos();
+      if (excluded.length > 0) {
+        const data = result.data as { values?: Array<{ slug?: string }> };
+        if (data.values) {
+          data.values = data.values.filter(
+            repo => !this.isRepoExcluded(projectKey, repo.slug ?? '')
+          );
+        }
+      }
+    }
+    return result;
   }
 
   /**
@@ -132,6 +167,9 @@ export class BitbucketService {
   async getRepository(projectKey: string, repositorySlug: string) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     return handleApiOperation(
       () => ProjectService.getRepository(projectKey, repositorySlug),
       'Error fetching repository'
@@ -170,6 +208,9 @@ export class BitbucketService {
   ) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     return handleApiOperation(
       () => PullRequestsService.getPage(
         projectKey,
@@ -203,6 +244,9 @@ export class BitbucketService {
   ) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     return handleApiOperation(
       () => PullRequestsService.get3(projectKey, pullRequestId, repositorySlug),
       'Error fetching pull request'
@@ -220,6 +264,9 @@ export class BitbucketService {
   ) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     const result = await handleApiOperation(
       () => PullRequestsService.getActivities(
         projectKey,
@@ -270,6 +317,9 @@ export class BitbucketService {
   ) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     const result = await handleApiOperation(
       () => PullRequestsService.streamChanges1(
         projectKey,
@@ -324,6 +374,9 @@ export class BitbucketService {
   ) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     const comment: any = {
       text
     };
@@ -422,6 +475,9 @@ export class BitbucketService {
   ) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     const requestBody: any = {
       status,
       ...(lastReviewedCommit ? { lastReviewedCommit } : {})
@@ -468,6 +524,9 @@ export class BitbucketService {
   ) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     return handleApiOperation(
       () => __request(OpenAPI, {
         method: 'GET',
@@ -522,6 +581,9 @@ export class BitbucketService {
   ) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     const pullRequestData: any = {
       title,
       description,
@@ -591,6 +653,9 @@ export class BitbucketService {
   ) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     const pullRequestData: any = {
       version
     };
@@ -648,6 +713,9 @@ export class BitbucketService {
   ) {
     projectKey = projectKey.toUpperCase();
     repositorySlug = repositorySlug.toLowerCase();
+    if (this.isRepoExcluded(projectKey, repositorySlug)) {
+      return this.repoExclusionError(projectKey, repositorySlug);
+    }
     return handleApiOperation(
       () => PullRequestsService.getReviewers(
         projectKey,
@@ -679,7 +747,7 @@ export class BitbucketService {
     start?: number,
     limit?: number
   ) {
-    return handleApiOperation(
+    const result = await handleApiOperation(
       () => __request(OpenAPI, {
         method: 'GET',
         url: '/api/1.0/dashboard/pull-requests',
@@ -697,6 +765,7 @@ export class BitbucketService {
       }),
       'Error fetching dashboard pull requests'
     );
+    return this.filterPullRequestsByExcludedRepos(result);
   }
 
   /**
@@ -721,13 +790,30 @@ export class BitbucketService {
       'Error fetching inbox pull requests'
     );
 
-    if (result.success && result.data) {
+    const filtered = this.filterPullRequestsByExcludedRepos(result);
+    if (filtered.success && filtered.data) {
       return {
         success: true,
-        data: simplifyInboxPullRequests(result.data),
+        data: simplifyInboxPullRequests(filtered.data),
       };
     }
 
+    return filtered;
+  }
+
+  // Filters a paginated PR response by removing PRs from excluded repos.
+  private filterPullRequestsByExcludedRepos(result: Awaited<ReturnType<typeof handleApiOperation>>) {
+    if (!result.success || !result.data || this.getExcludedRepos().length === 0) {
+      return result;
+    }
+    const data = result.data as { values?: Array<{ toRef?: { repository?: { slug?: string; project?: { key?: string } } } }> };
+    if (data.values) {
+      data.values = data.values.filter(pr => {
+        const slug = pr.toRef?.repository?.slug ?? '';
+        const project = pr.toRef?.repository?.project?.key ?? '';
+        return !this.isRepoExcluded(project, slug);
+      });
+    }
     return result;
   }
 

@@ -11,7 +11,7 @@ jest.mock('../bitbucket-client/core/request.js', () => ({
   request: jest.fn()
 }));
 
-// Mock the PullRequestsService
+// Mock the Bitbucket client
 jest.mock('../bitbucket-client/index.js', () => ({
   PullRequestsService: {
     streamRawDiff2: jest.fn(),
@@ -23,6 +23,12 @@ jest.mock('../bitbucket-client/index.js', () => ({
     getPage: jest.fn(),
     getReviewers: jest.fn(),
     get3: jest.fn()
+  },
+  ProjectService: {
+    getRepositories: jest.fn(),
+    getRepository: jest.fn(),
+    getProject: jest.fn(),
+    getProjects: jest.fn(),
   },
   OpenAPI: {
     BASE: '',
@@ -2159,5 +2165,146 @@ describe('BitbucketService', () => {
         'refs/heads/feature', 'refs/heads/main'
       );
     });
+  });
+});
+
+describe('BitbucketService repo exclusions', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ProjectService: MockProjectService } = require('../bitbucket-client/index.js') as {
+    ProjectService: { getRepositories: jest.Mock }
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function makeService(excludedRepos: string[] = ['TEST/secret-repo', 'PROJ/another-repo']) {
+    return new BitbucketService('host', 'token', undefined, () => 25, () => excludedRepos);
+  }
+
+  it('isRepoExcluded returns true for a matching entry (case-insensitive)', () => {
+    const svc = makeService();
+    expect(svc.isRepoExcluded('TEST', 'secret-repo')).toBe(true);
+    expect(svc.isRepoExcluded('test', 'SECRET-REPO')).toBe(true);
+  });
+
+  it('isRepoExcluded returns false for a non-excluded repo', () => {
+    const svc = makeService();
+    expect(svc.isRepoExcluded('TEST', 'public-repo')).toBe(false);
+  });
+
+  it('repoExclusionError returns a structured error with repo identifier', () => {
+    const svc = makeService();
+    const err = svc.repoExclusionError('TEST', 'secret-repo');
+    expect(err.success).toBe(false);
+    expect(err.error).toMatch(/TEST\/secret-repo/);
+    expect(err.error).toMatch(/excluded/);
+  });
+
+  it('getRepository returns exclusion error without calling API', async () => {
+    const svc = makeService();
+    const result = await svc.getRepository('TEST', 'secret-repo');
+    expect(result.success).toBe(false);
+    expect((result as { error: string }).error).toMatch(/excluded/);
+  });
+
+  it('getPullRequest returns exclusion error without calling API', async () => {
+    const svc = makeService();
+    const result = await svc.getPullRequest('TEST', 'secret-repo', '1');
+    expect(result.success).toBe(false);
+    expect(PullRequestsService.get3).not.toHaveBeenCalled();
+  });
+
+  it('getPullRequests returns exclusion error without calling API', async () => {
+    const svc = makeService();
+    const result = await svc.getPullRequests('TEST', 'secret-repo');
+    expect(result.success).toBe(false);
+    expect(PullRequestsService.getPage).not.toHaveBeenCalled();
+  });
+
+  it('createPullRequest returns exclusion error without calling API', async () => {
+    const svc = makeService();
+    const result = await svc.createPullRequest('TEST', 'secret-repo', 'title', undefined, 'main', 'feature');
+    expect(result.success).toBe(false);
+    expect(PullRequestsService.create).not.toHaveBeenCalled();
+  });
+
+  it('updatePullRequest returns exclusion error without calling API', async () => {
+    const svc = makeService();
+    const result = await svc.updatePullRequest('TEST', 'secret-repo', '1', 1);
+    expect(result.success).toBe(false);
+    expect(PullRequestsService.update).not.toHaveBeenCalled();
+  });
+
+  it('postPullRequestComment returns exclusion error without calling API', async () => {
+    const svc = makeService();
+    const result = await svc.postPullRequestComment('TEST', 'secret-repo', '1', 'hi');
+    expect(result.success).toBe(false);
+    expect(PullRequestsService.createComment2).not.toHaveBeenCalled();
+  });
+
+  it('submitPullRequestReview returns exclusion error without calling API', async () => {
+    const svc = makeService();
+    const result = await svc.submitPullRequestReview('TEST', 'secret-repo', '1', 'user', 'APPROVED');
+    expect(result.success).toBe(false);
+    expect(PullRequestsService.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it('getRepositories filters excluded repos from the result', async () => {
+    MockProjectService.getRepositories.mockResolvedValue({
+      values: [{ slug: 'secret-repo' }, { slug: 'public-repo' }],
+      isLastPage: true,
+    });
+    const svc = makeService();
+    const result = await svc.getRepositories('TEST');
+    expect(result.success).toBe(true);
+    const data = (result as { success: true; data: { values: Array<{ slug: string }> } }).data;
+    expect(data.values.map((r: { slug: string }) => r.slug)).toEqual(['public-repo']);
+  });
+
+  it('getInboxPullRequests filters PRs from excluded repos', async () => {
+    (mockRequest as jest.Mock).mockResolvedValue({
+      values: [
+        { id: 1, toRef: { repository: { slug: 'secret-repo', project: { key: 'TEST' } } }, fromRef: { repository: { slug: 'secret-repo', project: { key: 'TEST' } } }, title: 'excluded', reviewers: [], participants: [], links: {} },
+        { id: 2, toRef: { repository: { slug: 'public-repo', project: { key: 'TEST' } } }, fromRef: { repository: { slug: 'public-repo', project: { key: 'TEST' } } }, title: 'allowed', reviewers: [], participants: [], links: {} },
+      ],
+      isLastPage: true,
+    });
+    const svc = makeService();
+    const result = await svc.getInboxPullRequests();
+    expect(result.success).toBe(true);
+    const data = result.data as { pullRequests?: Array<{ id: number }> } | Array<{ id: number }>;
+    // The simplify mapper returns an array or object — confirm the excluded PR (id:1) is absent
+    const raw = JSON.stringify(data);
+    expect(raw).not.toMatch(/"id":1/);
+    expect(raw).toMatch(/"id":2/);
+  });
+
+  it('getDashboardPullRequests filters PRs from excluded repos', async () => {
+    (mockRequest as jest.Mock).mockResolvedValue({
+      values: [
+        { id: 10, toRef: { repository: { slug: 'secret-repo', project: { key: 'TEST' } } } },
+        { id: 11, toRef: { repository: { slug: 'public-repo', project: { key: 'TEST' } } } },
+      ],
+      isLastPage: true,
+    });
+    const svc = makeService();
+    const result = await svc.getDashboardPullRequests();
+    expect(result.success).toBe(true);
+    const data = result.data as { values: Array<{ id: number }> };
+    expect(data.values.map(pr => pr.id)).toEqual([11]);
+  });
+
+  it('non-excluded repo passes through normally', async () => {
+    (PullRequestsService.get3 as jest.Mock).mockResolvedValue({ id: '1', title: 'PR' });
+    const svc = makeService();
+    const result = await svc.getPullRequest('TEST', 'public-repo', '1');
+    expect(result.success).toBe(true);
+    expect(PullRequestsService.get3).toHaveBeenCalled();
+  });
+
+  it('returns empty excludedItems when no exclusions set', () => {
+    const svc = makeService([]);
+    expect(svc.isRepoExcluded('TEST', 'any-repo')).toBe(false);
   });
 });
