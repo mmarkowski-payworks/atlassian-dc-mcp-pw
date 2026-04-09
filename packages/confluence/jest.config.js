@@ -11,7 +11,7 @@ export default {
     }],
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(@atlassian-dc-mcp)/)',
+    'node_modules/(?!(@atlassian-dc-mcp|@modelcontextprotocol)/)',
   ],
   testEnvironment: 'node',
   testMatch: ['**/__tests__/**/*.test.ts'],
