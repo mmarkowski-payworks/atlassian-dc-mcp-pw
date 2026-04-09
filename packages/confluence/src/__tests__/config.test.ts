@@ -10,14 +10,19 @@ describe('Confluence config', () => {
   beforeEach(() => {
     jest.resetModules();
     process.env = { ...originalEnv };
-    delete process.env.ATLASSIAN_DC_MCP_CONFIG_FILE;
+    for (const key of [
+      'ATLASSIAN_DC_MCP_CONFIG_FILE',
+      'CONFLUENCE_HOST', 'CONFLUENCE_API_TOKEN', 'CONFLUENCE_API_BASE_PATH', 'CONFLUENCE_DEFAULT_PAGE_SIZE', 'CONFLUENCE_EXCLUDED_SPACES',
+    ]) {
+      delete process.env[key];
+    }
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'confluence-config-'));
     process.chdir(tempDir);
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
     process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   afterAll(() => {

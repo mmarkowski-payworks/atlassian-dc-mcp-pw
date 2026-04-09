@@ -10,14 +10,19 @@ describe('Jira config', () => {
   beforeEach(() => {
     jest.resetModules();
     process.env = { ...originalEnv };
-    delete process.env.ATLASSIAN_DC_MCP_CONFIG_FILE;
+    for (const key of [
+      'ATLASSIAN_DC_MCP_CONFIG_FILE',
+      'JIRA_HOST', 'JIRA_API_TOKEN', 'JIRA_API_BASE_PATH', 'JIRA_DEFAULT_PAGE_SIZE', 'JIRA_EXCLUDED_PROJECTS',
+    ]) {
+      delete process.env[key];
+    }
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jira-config-'));
     process.chdir(tempDir);
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
     process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   afterAll(() => {

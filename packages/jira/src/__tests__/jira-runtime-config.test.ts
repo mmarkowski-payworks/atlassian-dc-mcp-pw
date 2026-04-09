@@ -14,6 +14,11 @@ describe('Jira runtime config integration', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    for (const key of [
+      'JIRA_HOST', 'JIRA_API_TOKEN', 'JIRA_API_BASE_PATH', 'JIRA_DEFAULT_PAGE_SIZE', 'JIRA_EXCLUDED_PROJECTS',
+    ]) {
+      delete process.env[key];
+    }
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jira-runtime-config-'));
     sharedConfigPath = path.join(tempDir, 'shared.env');
     process.env.ATLASSIAN_DC_MCP_CONFIG_FILE = sharedConfigPath;

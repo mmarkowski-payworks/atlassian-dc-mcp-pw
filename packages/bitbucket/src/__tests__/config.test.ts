@@ -10,14 +10,19 @@ describe('Bitbucket config', () => {
   beforeEach(() => {
     jest.resetModules();
     process.env = { ...originalEnv };
-    delete process.env.ATLASSIAN_DC_MCP_CONFIG_FILE;
+    for (const key of [
+      'ATLASSIAN_DC_MCP_CONFIG_FILE',
+      'BITBUCKET_HOST', 'BITBUCKET_API_TOKEN', 'BITBUCKET_API_BASE_PATH', 'BITBUCKET_DEFAULT_PAGE_SIZE',
+    ]) {
+      delete process.env[key];
+    }
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bitbucket-config-'));
     process.chdir(tempDir);
   });
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
     process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   afterAll(() => {
