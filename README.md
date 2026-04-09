@@ -417,39 +417,66 @@ Direct environment variables always win over values loaded from the file referen
 
 ## Testing
 
-The project has two layers of tests:
+The project has two layers of automated tests covering **309 tests** across 16 test suites.
 
-### Unit tests
+### Unit tests (262 tests)
 
 Each package has unit tests that mock the Atlassian API clients and verify service-layer logic in isolation:
 
-| Package | Test files | What they cover |
-|---|---|---|
-| `common` | `runtime-config.test.ts` | Org config file loading, union/deduplication of exclusion lists, caching, re-init behaviour |
-| `jira` | `jira-service.test.ts`, `jira-runtime-config.test.ts`, `config.test.ts` | All 8 service methods, JQL exclusion injection, project exclusion guards, runtime config loading |
-| `confluence` | `confluence-service.test.ts`, `confluence-response-mapper.test.ts`, `config.test.ts` | All 5 service methods, CQL exclusion injection, space exclusion guards, response mapping |
-| `bitbucket` | `bitbucket-service.test.ts`, `bitbucket-token-optimization.test.ts`, `inbox-pr-mapper.test.ts`, `pr-changes-mapper.test.ts`, `pr-comment-mapper.test.ts`, `config.test.ts` | All 18 service methods, repo exclusion guards, post-filter behaviour, response mappers, token budget optimisation |
+| Package | Tests | Test files | What they cover |
+|---|---|---|---|
+| `common` | 20 | `runtime-config.test.ts` | Org config file loading, union/deduplication of user + org exclusion lists, lazy caching per init cycle, re-init behaviour, absent file is silently ignored |
+| `jira` | 51 | `jira-service.test.ts`, `jira-runtime-config.test.ts`, `config.test.ts` | All 8 service methods including happy paths, pagination, and API errors; JQL exclusion injection (single/multiple/ORDER BY preservation); project exclusion pre-call guards; `customFields` bypass prevention; runtime config loading |
+| `confluence` | 50 | `confluence-service.test.ts`, `confluence-response-mapper.test.ts`, `config.test.ts` | All 5 service methods; CQL exclusion injection for `searchContent` and `searchSpaces`; space exclusion pre-call and post-read guards; `escapeSearchTextForCql` edge cases; HTML→text conversion and truncation in `getContent`; response mapping |
+| `bitbucket` | 141 | `bitbucket-service.test.ts`, `bitbucket-token-optimization.test.ts`, `inbox-pr-mapper.test.ts`, `pr-changes-mapper.test.ts`, `pr-comment-mapper.test.ts`, `config.test.ts` | All 18 service methods; repo exclusion pre-call guards on all per-repo operations; silent post-filter on `getRepositories`, `getInboxPullRequests`, and `getDashboardPullRequests`; composite `PROJECT/slug` key normalisation (uppercase/lowercase); PR response mappers; token-budget optimisation |
 
-### Integration tests
+### Integration tests (47 tests)
 
-Each package has an MCP integration test that spins up the real MCP server in-process using `InMemoryTransport` and exercises the full stack — from MCP tool call through service logic to the mocked Atlassian API:
+Each package has an MCP integration test that spins up the real MCP server in-process using `InMemoryTransport` and exercises the full stack — MCP tool call → Zod schema validation → service layer → mocked Atlassian API client:
 
-| Package | Test file | What they verify |
-|---|---|---|
-| `jira` | `jira-server.integration.test.ts` | All 8 tools registered, Zod schema validation at the MCP boundary, exclusion blocks for `getIssue`/`getIssueComments`, JQL injection for `searchIssues`, non-excluded access allowed |
-| `confluence` | `confluence-server.integration.test.ts` | All 5 tools registered, Zod schema validation, post-read block for `getContent`, pre-write guard for `createContent`/`updateContent`, CQL injection for `searchContent`, non-excluded access allowed |
-| `bitbucket` | `bitbucket-server.integration.test.ts` | All 18 tools registered, Zod schema validation, pre-call blocks for `getRepository`/`getPullRequests`/`createPullRequest`, silent filter for `getRepositories`, non-excluded access allowed |
+#### Jira — 15 tests
 
-Run all tests:
+| Category | Tests |
+|---|---|
+| Tool listing | All 8 tools registered |
+| Zod validation | `searchIssues` (missing `jql`), `searchIssues` (`jql` too long), `getIssue` (`issueKey` too long), `createIssue` (missing `projectId`), `postIssueComment` (`comment` too long) |
+| Exclusion blocks | `getIssue`, `getIssueComments`, `createIssue`, `updateIssue`, `postIssueComment`, `getTransitions`, `transitionIssue` — all 7 blocked operations covered |
+| Query injection | `searchIssues` injects `project NOT IN (...)` into JQL |
+| Allow access | Non-excluded project passes through |
+
+#### Confluence — 11 tests
+
+| Category | Tests |
+|---|---|
+| Tool listing | All 5 tools registered |
+| Zod validation | `searchContent` (missing `cql`), `createContent` (`content` too long), `updateContent` (missing `version`), `searchSpace` (missing `searchText`) |
+| Exclusion blocks | `getContent` (post-read guard), `createContent` (pre-call guard), `updateContent` (read then pre-write guard) |
+| Query injection | `searchContent` injects `space.key NOT IN (...)` into CQL; `searchSpace` injects `space.key NOT IN (...)` into CQL |
+| Allow access | Non-excluded space passes through |
+
+#### Bitbucket — 21 tests
+
+| Category | Tests |
+|---|---|
+| Tool listing | All 18 tools registered |
+| Zod validation | `getPullRequests` (missing `repositorySlug`), `getRepository` (missing `projectKey`), `createPullRequest` (missing `fromRefId`), `postPullRequestComment` (`text` too long) |
+| Exclusion pre-call blocks | `getRepository`, `getPullRequests`, `createPullRequest`, `getCommits`, `getPullRequest`, `getPR_CommentsAndAction`, `getPullRequestChanges`, `postPullRequestComment`, `submitPullRequestReview`, `getPullRequestDiff`, `updatePullRequest`, `getRequiredReviewers` — all 12 per-repo operations covered |
+| Post-filter | `getRepositories` silently removes excluded repos; `getInboxPullRequests` filters by repo; `getDashboardPullRequests` filters by repo |
+| Allow access | Non-excluded repo passes through |
+
+### Running tests
 
 ```bash
+# All packages
 npm run test
-```
 
-Run tests for a single package:
-
-```bash
+# Single package
 npm run test --workspace=@atlassian-dc-mcp/jira
+npm run test --workspace=@atlassian-dc-mcp/confluence
+npm run test --workspace=@atlassian-dc-mcp/bitbucket
+
+# Single test file (from package directory)
+npx jest src/__tests__/jira-server.integration.test.ts
 ```
 
 ## License
