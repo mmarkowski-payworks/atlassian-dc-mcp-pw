@@ -162,7 +162,7 @@ Windows example path:
 
 ## Controlling Which Projects and Spaces Are Accessible
 
-You can prevent the AI from reading or writing specific Jira projects, Confluence spaces, or (future) Bitbucket repositories by configuring exclusion lists. Excluded resources are invisible to the AI — searches omit them and any attempt to read or write them is rejected.
+You can prevent the AI from reading or writing specific Jira projects, Confluence spaces, or Bitbucket repositories by configuring exclusion lists. Excluded resources are invisible to the AI — searches omit them and any attempt to read or write them is rejected.
 
 ### User-level exclusions (env var or config file)
 
@@ -310,9 +310,13 @@ Store these tokens securely and use them in your Claude Desktop configuration as
 
 The Atlassian DC MCP allows AI assistants to interact with Atlassian products through a standardized interface. It provides tools for:
 
-- **Jira**: Search, view, and create issues
-- **Confluence**: Access and manage content
-- **Bitbucket**: Interact with repositories and code
+- **Jira** (8 tools): Search issues via JQL, get issue details and comments, create/update issues, post comments, get and apply workflow transitions
+- **Confluence** (5 tools): Get page content by ID, search content via CQL, create/update pages, search spaces
+- **Bitbucket** (18 tools): List projects and repositories, get repository details and commits, manage pull requests (create, update, review, comment, diff), get required reviewers, view inbox and dashboard PR lists
+
+### Access Controls
+
+All three services enforce exclusion lists that restrict which projects, spaces, and repositories the AI can access. See [Controlling Which Projects and Spaces Are Accessible](#controlling-which-projects-and-spaces-are-accessible) for full details.
 
 ## Prerequisites
 
@@ -410,6 +414,43 @@ BITBUCKET_API_TOKEN=your-api-token
 ```
 
 Direct environment variables always win over values loaded from the file referenced by `ATLASSIAN_DC_MCP_CONFIG_FILE`.
+
+## Testing
+
+The project has two layers of tests:
+
+### Unit tests
+
+Each package has unit tests that mock the Atlassian API clients and verify service-layer logic in isolation:
+
+| Package | Test files | What they cover |
+|---|---|---|
+| `common` | `runtime-config.test.ts` | Org config file loading, union/deduplication of exclusion lists, caching, re-init behaviour |
+| `jira` | `jira-service.test.ts`, `jira-runtime-config.test.ts`, `config.test.ts` | All 8 service methods, JQL exclusion injection, project exclusion guards, runtime config loading |
+| `confluence` | `confluence-service.test.ts`, `confluence-response-mapper.test.ts`, `config.test.ts` | All 5 service methods, CQL exclusion injection, space exclusion guards, response mapping |
+| `bitbucket` | `bitbucket-service.test.ts`, `bitbucket-token-optimization.test.ts`, `inbox-pr-mapper.test.ts`, `pr-changes-mapper.test.ts`, `pr-comment-mapper.test.ts`, `config.test.ts` | All 18 service methods, repo exclusion guards, post-filter behaviour, response mappers, token budget optimisation |
+
+### Integration tests
+
+Each package has an MCP integration test that spins up the real MCP server in-process using `InMemoryTransport` and exercises the full stack — from MCP tool call through service logic to the mocked Atlassian API:
+
+| Package | Test file | What they verify |
+|---|---|---|
+| `jira` | `jira-server.integration.test.ts` | All 8 tools registered, Zod schema validation at the MCP boundary, exclusion blocks for `getIssue`/`getIssueComments`, JQL injection for `searchIssues`, non-excluded access allowed |
+| `confluence` | `confluence-server.integration.test.ts` | All 5 tools registered, Zod schema validation, post-read block for `getContent`, pre-write guard for `createContent`/`updateContent`, CQL injection for `searchContent`, non-excluded access allowed |
+| `bitbucket` | `bitbucket-server.integration.test.ts` | All 18 tools registered, Zod schema validation, pre-call blocks for `getRepository`/`getPullRequests`/`createPullRequest`, silent filter for `getRepositories`, non-excluded access allowed |
+
+Run all tests:
+
+```bash
+npm run test
+```
+
+Run tests for a single package:
+
+```bash
+npm run test --workspace=@atlassian-dc-mcp/jira
+```
 
 ## License
 
